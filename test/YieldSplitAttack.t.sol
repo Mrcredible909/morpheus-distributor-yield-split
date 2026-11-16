@@ -156,6 +156,34 @@ contract YieldSplitAttackTest {
         require((delta * MOR_USD) / 1e36 < 100e18, "baseline unexpectedly large");
     }
 
+    /// Control: the same donation, with no stake in the pool, pays the attacker nothing.
+    /// This separates our trigger (third-party transfer) from issue #64 (two pools sharing one token).
+    function test_control_noStakeNoProfit() public {
+        uint256 snap = vm.snapshot();
+        _warpPastPeriod();
+        uint256 c0 = IDist(DIST).distributedRewards(0, POOL);
+        IDist(DIST).distributeRewards(0);
+        uint256 control = IDist(DIST).distributedRewards(0, POOL) - c0;
+        vm.revertTo(snap);
+
+        _warpPastPeriod();
+        vm.startPrank(attacker);
+        IERC20(aUSDT).transfer(DIST, DONATION);
+        vm.stopPrank();
+
+        uint256 a0 = IDist(DIST).distributedRewards(0, POOL);
+        IDist(DIST).distributeRewards(0);
+        uint256 attack = IDist(DIST).distributedRewards(0, POOL) - a0;
+
+        vm.warp(block.timestamp + 15 days);
+        uint256 claimable = IPool(POOL).getLatestUserReward(0, attacker);
+
+        L.u("control_noStake_pool_MOR", attack);
+        L.u("control_noStake_attacker_claimable", claimable);
+        require(attack > control * 5, "pool share not bent");
+        require(claimable == 0, "attacker with no stake should get nothing");
+    }
+
     /// Attack: dominate a small pool with a max lock multiplier, then donate aToken to bend the split.
     function test_yieldSplitAttack() public {
         uint256 snap = vm.snapshot();
